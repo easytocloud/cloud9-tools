@@ -1,0 +1,58 @@
+#! /usr/bin/env bash
+
+# Make sure to set C9TOOLSROOT to a directory that you have full access to!
+
+C9TOOLSROOT=${C9TOOLSROOT:=~/.c9tools}
+
+# -- main
+
+# if target directory exists, this is just an update (bin only)
+
+if test -d ${C9TOOLSROOT}
+then
+  echo Updating tools --> only copying distribution/bin to ${C9TOOLSROOT}/bin
+  cp -rp distribution/bin/* ${C9TOOLSROOT}/bin
+  exit 0
+fi
+
+# first time install starts here
+
+echo Installing tools in ${C9TOOLSROOT}
+mkdir -p ${C9TOOLSROOT}/bin
+mkdir -p ${C9TOOLSROOT}/etc
+
+cp -rp distribution/bin/* ${C9TOOLSROOT}/bin
+cp -rp distribution/etc/* ${C9TOOLSROOT}/etc
+
+echo Setting up profile
+
+# -- create .profile_c9tools
+
+cat <<EOF > ~/.profile_c9tools
+# Config root of tools tree
+
+export C9TOOLSROOT=${C9TOOLSROOT}
+
+# Extend PATH & source functions
+
+export MAKEFILES=${C9TOOLSROOT}/etc/Makefile.rules
+
+export PATH="\$PATH:\${C9TOOLSROOT}/bin"
+[[ -s "${C9TOOLSROOT}/bin/_functions" ]] && source "${C9TOOLSROOT}/bin/_functions" 
+EOF
+
+# check for prerequisites
+
+if [ "$(which jq)" = "" ]
+then
+  echo "To use these tools, make sure you have jq installed"
+fi
+
+# -- add c9tools profile to shell profiles
+
+echo source ~/.profile_c9tools >> ~/.bash_profile
+echo source ~/.profile_c9tools >> ~/.profile
+
+echo Installation completed
+echo Edit ${C9TOOLSROOT}/etc/org_access 
+echo Make sure to source ~/.profile_c9tools to start using tools

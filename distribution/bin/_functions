@@ -1,0 +1,289 @@
+#! /usr/bin/env bash
+
+# --- Vars section ---
+
+source ${C9TOOLSROOT}/etc/org_access
+
+# Generic settings
+
+LOGDATEFORMAT='+%Y/%m/%d-%H:%M'
+_debug=${_debug:-false}
+
+# --- Only code below this marker ---
+
+_roleindex=0
+
+# --- pushrole
+#
+#       push current role 
+#           assume role passed in $1
+#           optional $2 is used as external-id
+#
+pushrole()
+{
+    export _wishrole=${1}
+    export _external=""
+    
+    [[  -z "${2}" ]] || _external="--external-id ${2}"
+    
+    debug "pushrole: about to assume ${_wishrole} ${_external}"
+    
+    O_AKID[${_roleindex}]="${AWS_ACCESS_KEY_ID}"
+      O_SK[${_roleindex}]="${AWS_SECRET_ACCESS_KEY}"
+     O_TOK[${_roleindex}]="${AWS_SESSION_TOKEN}"
+    let _roleindex+=1
+    
+    read AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN <<< \
+       $(aws sts assume-role --role-arn $_wishrole ${_external} --role-session pushed_role \
+       | jq -r '.Credentials.AccessKeyId, .Credentials.SecretAccessKey, .Credentials.SessionToken' )
+       
+    if [ -z  ${AWS_ACCESS_KEY_ID} ]
+    then
+        error "assume-role failed, popping previous role"
+        poprole
+        return 1
+    else
+        debug "pushed"
+    fi
+}
+
+# --- poprole
+#
+#       pop previously pushed role
+#       *return* (not exit) when stack is empty
+#
+poprole()
+{
+    let _roleindex-=1
+    
+    if (( _roleindex<0 )) 
+    then
+        error "Stack empty"
+        _roleindex=0
+        return
+    fi
+    
+    AWS_ACCESS_KEY_ID="${O_AKID[${_roleindex}]}"
+    AWS_SECRET_ACCESS_KEY="${O_SK[${_roleindex}]}"
+    AWS_SESSION_TOKEN="${O_TOK[${_roleindex}]}"
+    
+    debug "poprole: popped, remaining $_roleindex on stack"
+
+}
+
+# --- fororganization
+#
+#       execute the command given as argument in all accounts of the organization
+#       this function should run in MASTER account and assumes OrgAccAccRole in member accounts
+#
+fororganization()
+{
+    source ${C9TOOLSROOT}/etc/org_access
+    [[ $(aws sts get-caller-identity --query Account --output text) == ${ORG_MASTER_ACCOUNT} ]] || \
+        die "fororganization runs only in Master account ${ORG_MASTER_ACCOUNT}"
+    
+    _allaccounts=$(_my_list_accounts --query Accounts[].Id --output text )
+    
+    CMD=${@}
+    
+    for account in $_allaccounts
+    do
+        echo "# account $(ac2name ${account})  (${account})"
+        [[ "${account}" == "${ORG_MASTER_ACCOUNT}" ]]||pushrole arn:aws:iam::${account}:role/${ORG_ACCOUNT_ACCESS_ROLE} 
+            eval ${CMD}
+        [[ "${account}" == "${ORG_MASTER_ACCOUNT}" ]]||poprole
+    done
+}
+# --- fororganizationJSON
+#
+#       execute the command given as argument in all accounts of the organization
+#       this function should run in MASTER account and assumes OrgAccAccRole in member accounts
+#
+#       output in JSON format
+#
+fororganizationJSON()
+{
+    source ${C9TOOLSROOT}/etc/org_access
+    [[ $(aws sts get-caller-identity --query Account --output text) == ${ORG_MASTER_ACCOUNT} ]] || \
+        die "fororganization runs only in Master account ${ORG_MASTER_ACCOUNT}"
+    
+    _allaccounts=$(_my_list_accounts --query Accounts[].Id --output text  )
+    _frst=false
+    CMD=${@}
+    
+    echo '{ "Results" : ['
+    for account in $_allaccounts
+    do
+        if [[ "${_frst}" == "false" ]]
+        then
+            _frst=true
+        else
+            echo ','
+        fi
+        [[ "${account}" == "${ORG_MASTER_ACCOUNT}" ]]|| pushrole arn:aws:iam::${account}:role/${ORG_ACCOUNT_ACCESS_ROLE} 
+            eval ${CMD} > /tmp/$$.tmp || _frst=false
+        [[ "${account}" == "${ORG_MASTER_ACCOUNT}" ]] || poprole
+        [[ "${_frst}" == "true" ]] && ( cat /tmp/$$.tmp | jq --arg id ${account} --arg name "$(ac2name ${account})" '{ Account: $id, AccountName: $name } + .' )
+        
+    done
+    echo ']}'
+}
+# --- _pre_list_accounts
+#
+#       before calling aws list-accounts assume LIST_ACCOUNTS_ROLE in ORG_MASTER_ACCOUNT when necessary
+#
+_pre_my_list_accounts()
+{
+    need_push=true
+    
+    [[ $(aws sts get-caller-identity --query "Account" --output text) == "${ORG_MASTER_ACCOUNT}" ]] && need_push=false
+    
+    ${need_push} && pushrole arn:aws:iam::${ORG_MASTER_ACCOUNT}:role/${LIST_ACCOUNTS_ROLE} ${LIST_ACCOUNTS_EXTERNAL_ID}
+}
+
+# --- _post_list_accounts
+#
+#       pop role when pushed in pre_list_accounts
+#
+_post_my_list_accounts()
+{
+    ${need_push} && poprole
+}
+
+# --- _my_list_accounts
+#
+#       uses _pre and _post functions to assume a role in the Master Account
+#       so that aws organization list-accounts can be executed
+#       all parameters passed to this function will be passed to aws organization list-accounts
+#
+_my_list_accounts()
+{
+    _pre_my_list_accounts
+    aws organizations list-accounts $@
+    _post_my_list_accounts
+}
+# --- ac2name
+#
+#       translate 12-digit account-id to AWS account name
+#
+
+ac2name()
+{
+    
+    _my_list_accounts --query 'Accounts[?Id==`"'${1}'"`].Name' --output text
+    
+    
+}
+# --- name2ac
+#
+#       translate AWS account name to 12 digit account identifier
+#
+
+name2ac()
+{
+    
+    _my_list_accounts --query 'Accounts[?Name==`"'${1}'"`].Id' --output text
+    
+}
+
+# --- get_accountlist
+#
+#      create a comma-separated list of all accounts
+#      optional parameter is comma-separated list of fields
+#      defaults: to Name,Id
+#
+get_accountlist()
+{
+    FIELDS=${1:-"Name,Id"}
+    
+    
+    _my_list_accounts --query 'Accounts[].['${FIELDS}']' --output text | tr '\t' ','
+    
+}
+
+
+# --- whoiam
+#
+#       what (IAM) user i am 
+#
+
+whoiam()
+{
+    aws sts get-caller-identity $@
+}
+
+# --- filterin
+#
+#       show only 'words' that occur in both 'lists'
+#
+
+filterin()
+{
+    LIST="${1}"
+    PATT="${2}"
+    
+    for item in ${LIST}
+    do
+        echo "${PATT}" | grep -q "${item}" && echo "${item}"
+    done
+}
+
+# === some generic functions
+
+# --- myfunctions
+#
+#       show functions defined in self
+#
+myfunctions()
+{
+    grep '.*()$' ${C9TOOLSROOT}/bin/_functions | tr -d '()'
+}
+
+# --- manfunction
+#
+#       display the 'documentation' header for the function defined in self
+#       documentation starts with '# --- ' pattern
+#       and ends at first non-comment line
+manfunction()
+{
+    sed -n -e "/^# --- $1/,/^[^#]/p" ${C9TOOLSROOT}/bin/_functions | tr -d '#' 
+}
+
+# --- log
+#
+#       write timestemped log message in parameter(s)
+#
+log()
+{
+    echo "$(date ${LOGDATEFORMAT}) - $@"
+}
+# --- debug
+#
+#       conditionlally write timestemped log message in parameter(s)
+#       only when _debug is set to true
+#
+debug()
+{
+    ${_debug} && log "$@"
+}
+# --- error
+#
+#       log messge to standard error
+#
+error()
+{
+    log "$@" >&2
+}
+# --- die
+#
+#       exit script after loggin error message in parameter(s)
+#
+die()
+{
+    error "$@"
+    exit 1
+}
+
+# make functions available in scripts and other sub-shells
+
+export -f $(myfunctions)
