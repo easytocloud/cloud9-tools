@@ -10,21 +10,21 @@ C9TOOLSROOT=${C9TOOLSROOT:=~/.c9tools}
 
 if test -d ${C9TOOLSROOT}
 then
-  echo Updating tools --> only copying distribution/bin to ${C9TOOLSROOT}/bin
+  echo "Updating tools --> only copying distribution/bin to ${C9TOOLSROOT}/bin"
   cp -rp distribution/bin/* ${C9TOOLSROOT}/bin
   exit 0
 fi
 
 # first time install starts here
 
-echo Installing tools in ${C9TOOLSROOT}
+echo "Installing tools in ${C9TOOLSROOT}"
 mkdir -p ${C9TOOLSROOT}/bin
 mkdir -p ${C9TOOLSROOT}/etc
 
 cp -rp distribution/bin/* ${C9TOOLSROOT}/bin
 cp -rp distribution/etc/* ${C9TOOLSROOT}/etc
 
-echo Setting up profile
+echo "Setting up profile"
 
 # -- create .profile_c9tools
 
@@ -53,6 +53,6 @@ fi
 echo source ~/.profile_c9tools >> ~/.bash_profile
 echo source ~/.profile_c9tools >> ~/.profile
 
-echo Installation completed
-echo Edit ${C9TOOLSROOT}/etc/org_access 
-echo Make sure to source ~/.profile_c9tools to start using tools
+echo "Installation completed"
+echo "Edit ${C9TOOLSROOT}/etc/org_access "
+echo "Make sure to source ~/.profile_c9tools to start using tools"
