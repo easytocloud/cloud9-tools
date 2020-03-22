@@ -13,6 +13,12 @@ _debug=${_debug:-false}
 
 _roleindex=0
 
+askask()
+{
+	echo -n "please enter AK: " && read AWS_ACCESS_KEY_ID
+	echo -n "please enter SK: " && read AWS_SECRET_ACCESS_KEY
+}
+
 # --- pushrole
 #
 #       push current role 
