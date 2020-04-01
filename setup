@@ -2,13 +2,14 @@
 
 # Make sure to set C9TOOLSROOT to a directory that you have full access to!
 
-C9TOOLSROOT=${C9TOOLSROOT:=~/.c9tools}
+export C9TOOLSROOT=${C9TOOLSROOT:=~/.c9tools}
+
 
 # -- main
 
 # if target directory exists, this is just an update (bin only)
 
-if test -d ${C9TOOLSROOT}
+if test -d ${C9TOOLSROOT}/etc/foo
 then
   echo "Updating tools --> only copying distribution/bin to ${C9TOOLSROOT}/bin"
   cp -rp distribution/bin/* ${C9TOOLSROOT}/bin
@@ -53,6 +54,15 @@ fi
 echo source ~/.profile_c9tools >> ~/.bash_profile
 echo source ~/.profile_c9tools >> ~/.profile
 
+test -f ${C9TOOLSROOT}/etc/org_access && source ${C9TOOLSROOT}/etc/org_access
+
 echo "Installation completed"
+echo -n "Enter 12 digit AWS accountnumber of Organization Master Account [$ORG_MASTER_ACCOUNT] : "
+read accountId
+ORG_MASTER_ACCOUNT=${accountId:-ORG_MASTER_ACCOUNT}
+echo -n "Enter name for CrossAccount Role [${ORG_ACCOUNT_ACCESS_ROLE}]: "
+read oar
+ORG_ACCOUNT_ACCESS_ROLE=${oar:-ORG_ACCOUNT_ACCESS_ROLE} 
+
 echo "Edit ${C9TOOLSROOT}/etc/org_access "
 echo "Make sure to source ~/.profile_c9tools to start using tools"
