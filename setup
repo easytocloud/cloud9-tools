@@ -23,7 +23,7 @@ mkdir -p ${C9TOOLSROOT}/bin
 mkdir -p ${C9TOOLSROOT}/etc
 
 cp -rp distribution/bin/* ${C9TOOLSROOT}/bin
-cp -rp distribution/etc/* ${C9TOOLSROOT}/etc
+test -f ${C9TOOLSROOT}/etc/org_access || cp -rp distribution/etc/* ${C9TOOLSROOT}/etc
 
 echo "Setting up profile"
 
@@ -57,12 +57,12 @@ echo source ~/.profile_c9tools >> ~/.profile
 test -f ${C9TOOLSROOT}/etc/org_access && source ${C9TOOLSROOT}/etc/org_access
 
 echo "Installation completed"
-echo -n "Enter 12 digit AWS accountnumber of Organization Master Account [$ORG_MASTER_ACCOUNT] : "
+echo -n "Enter 12 digit AWS accountnumber of Organization Master Account [${ORG_MASTER_ACCOUNT}] : "
 read accountId
-ORG_MASTER_ACCOUNT=${accountId:-ORG_MASTER_ACCOUNT}
+ORG_MASTER_ACCOUNT=${accountId:-${ORG_MASTER_ACCOUNT}}
 echo -n "Enter name for CrossAccount Role [${ORG_ACCOUNT_ACCESS_ROLE}]: "
 read oar
-ORG_ACCOUNT_ACCESS_ROLE=${oar:-ORG_ACCOUNT_ACCESS_ROLE} 
+ORG_ACCOUNT_ACCESS_ROLE=${oar:-${ORG_ACCOUNT_ACCESS_ROLE}} 
 
 echo "ORG_MASTER_ACCOUNT=${ORG_MASTER_ACCOUNT}" >> ${C9TOOLSROOT}/etc/org_access
 echo "ORG_ACCOUNT_ACCESS_ROLE=${ORG_ACCOUNT_ACCESS_ROLE}" >> ${C9TOOLSROOT}/etc/org_access

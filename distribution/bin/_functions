@@ -23,6 +23,11 @@ _roleindex=0
 #
 setawsvars()
 {
+    if [ $? != 0 ]
+    then
+        return 1
+    fi
+    
     if [ $# == 0 ]
     then
 	    echo -n "please enter AK: " && read AWS_ACCESS_KEY_ID
@@ -65,8 +70,7 @@ pushrole()
      O_TOK[${_roleindex}]="${AWS_SESSION_TOKEN}"
     let _roleindex+=1
     
-    setawsvars $( \
-        aws sts assume-role --role-arn $_wishrole ${_external} --role-session pushed_role \
+    setawsvars $( aws sts assume-role --role-arn $_wishrole ${_external} --role-session pushed_role \
         --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' --output text )
        
     if [ -z  "${AWS_ACCESS_KEY_ID}" ]
@@ -123,7 +127,7 @@ fororganization()
     
     for account in $_allaccounts
     do
-        echo "# account (${account}) | $(ac2name ${account}) "
+        echo "# account ${account} | $(ac2name ${account}) "
         if  [[ "${account}" == "${ORG_MASTER_ACCOUNT}" ]]||pushrole arn:aws:iam::${account}:role/${ORG_ACCOUNT_ACCESS_ROLE} 
         then
             eval ${CMD}
