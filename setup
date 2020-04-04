@@ -64,5 +64,8 @@ echo -n "Enter name for CrossAccount Role [${ORG_ACCOUNT_ACCESS_ROLE}]: "
 read oar
 ORG_ACCOUNT_ACCESS_ROLE=${oar:-ORG_ACCOUNT_ACCESS_ROLE} 
 
-echo "Edit ${C9TOOLSROOT}/etc/org_access "
+echo "ORG_MASTER_ACCOUNT=${ORG_MASTER_ACCOUNT}" >> ${C9TOOLSROOT}/etc/org_access
+echo "ORG_ACCOUNT_ACCESS_ROLE=${ORG_ACCOUNT_ACCESS_ROLE}" >> ${C9TOOLSROOT}/etc/org_access
+
+echo "Review ${C9TOOLSROOT}/etc/org_access "
 echo "Make sure to source ~/.profile_c9tools to start using tools"
