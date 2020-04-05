@@ -2,8 +2,6 @@
 
 # --- Vars section ---
 
-#source ${C9TOOLSROOT}/etc/org_access
-
 # Generic settings
 
 LOGDATEFORMAT='+%Y/%m/%d-%H:%M'
@@ -107,7 +105,7 @@ poprole()
 
 # --- foraccountlist
 #
-#
+# execute ${CMD} in each of the accounts in parameter list assuming ${ORG_ACCOUNT_ACCESS_ROLE}
 
 _CMDforaccountlist()
 {
@@ -227,14 +225,6 @@ forprofiles()
         eval ${@}
     done
 }
-
-# --- fororganizationJSON
-#
-#       execute the command given as argument in all accounts of the organization
-#       this function should run in MASTER account and assumes OrgAccAccRole in member accounts
-#
-#       output in JSON format
-#
 
 # --- _pre_list_accounts
 #

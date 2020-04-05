@@ -4,59 +4,25 @@
 
 export C9TOOLSROOT=${C9TOOLSROOT:=~/.c9tools}
 
+ORG_ACCESS_FILE=${C9TOOLSROOT}/etc/org_access
+if !test -z ${AWSENV} ; then
+  ORG_ACCESS_FILE=${ORG_ACCESS_FILE}.${AWSENV}
+fi
 
 # -- main
 
 # if target directory exists, this is just an update (bin only)
 
-if test -d ${C9TOOLSROOT}/etc/foo
+if ! test -d ${C9TOOLSROOT}/etc
 then
-  echo "Updating tools --> only copying distribution/bin to ${C9TOOLSROOT}/bin"
-  cp -rp distribution/bin/* ${C9TOOLSROOT}/bin
-  exit 0
+  echo "c9tools not installed in ${C9TOOLSROOT}/bin"
+  echo "run install before setup!"
+  exit 1
 fi
 
-# first time install starts here
+test -f ${ORG_ACCESS_FILE} && source ${ORG_ACCESS_FILE}
 
-echo "Installing tools in ${C9TOOLSROOT}"
-mkdir -p ${C9TOOLSROOT}/bin
-mkdir -p ${C9TOOLSROOT}/etc
-
-cp -rp distribution/bin/* ${C9TOOLSROOT}/bin
-test -f ${C9TOOLSROOT}/etc/org_access || cp -rp distribution/etc/* ${C9TOOLSROOT}/etc
-
-echo "Setting up profile"
-
-# -- create .profile_c9tools
-
-cat <<EOF > ~/.profile_c9tools
-# Config root of tools tree
-
-export C9TOOLSROOT=${C9TOOLSROOT}
-
-# Extend PATH & source functions
-
-export MAKEFILES=${C9TOOLSROOT}/etc/Makefile.rules
-
-export PATH="\$PATH:\${C9TOOLSROOT}/bin"
-[[ -s "${C9TOOLSROOT}/bin/_functions" ]] && source "${C9TOOLSROOT}/bin/_functions" 
-EOF
-
-# check for prerequisites
-
-if [ "$(which jq)" = "" ]
-then
-  echo "To use these tools, make sure you have jq installed"
-fi
-
-# -- add c9tools profile to shell profiles
-
-echo source ~/.profile_c9tools >> ~/.bash_profile
-echo source ~/.profile_c9tools >> ~/.profile
-
-test -f ${C9TOOLSROOT}/etc/org_access && source ${C9TOOLSROOT}/etc/org_access
-
-echo "Installation completed"
+echo "Configuring ${AWS_ENV:-default} environment"
 echo -n "Enter 12 digit AWS accountnumber of Organization Master Account [${ORG_MASTER_ACCOUNT}] : "
 read accountId
 ORG_MASTER_ACCOUNT=${accountId:-${ORG_MASTER_ACCOUNT}}
@@ -64,8 +30,7 @@ echo -n "Enter name for CrossAccount Role [${ORG_ACCOUNT_ACCESS_ROLE}]: "
 read oar
 ORG_ACCOUNT_ACCESS_ROLE=${oar:-${ORG_ACCOUNT_ACCESS_ROLE}} 
 
-echo "ORG_MASTER_ACCOUNT=${ORG_MASTER_ACCOUNT}" >> ${C9TOOLSROOT}/etc/org_access
-echo "ORG_ACCOUNT_ACCESS_ROLE=${ORG_ACCOUNT_ACCESS_ROLE}" >> ${C9TOOLSROOT}/etc/org_access
+echo "ORG_MASTER_ACCOUNT=${ORG_MASTER_ACCOUNT}" >> ${ORG_ACCESS_FILE}
+echo "ORG_ACCOUNT_ACCESS_ROLE=${ORG_ACCOUNT_ACCESS_ROLE}" >> ${ORG_ACCESS_FILE}
 
-echo "Review ${C9TOOLSROOT}/etc/org_access "
-echo "Make sure to source ~/.profile_c9tools to start using tools"
+echo "Review ${ORG_ACCESS_FILE} for full cross account access role setup"
