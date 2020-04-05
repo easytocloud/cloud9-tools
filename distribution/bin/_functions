@@ -2,7 +2,7 @@
 
 # --- Vars section ---
 
-source ${C9TOOLSROOT}/etc/org_access
+#source ${C9TOOLSROOT}/etc/org_access
 
 # Generic settings
 
@@ -101,31 +101,17 @@ poprole()
     fi
     
     setawsvars "${O_AKID[${_roleindex}]}" "${O_SK[${_roleindex}]}" "${O_TOK[${_roleindex}]}"
-    
-    #AWS_ACCESS_KEY_ID="${O_AKID[${_roleindex}]}"
-    #AWS_SECRET_ACCESS_KEY="${O_SK[${_roleindex}]}"
-    #AWS_SESSION_TOKEN="${O_TOK[${_roleindex}]}"
-    
+  
     debug "poprole: popped, remaining $_roleindex on stack"
-
 }
 
-# --- fororganization
+# --- foraccountlist
 #
-#       execute the command given as argument in all accounts of the organization
-#       this function should run in MASTER account and assumes OrgAccAccRole in member accounts
 #
-fororganization()
+
+_CMDforaccountlist()
 {
-    source ${C9TOOLSROOT}/etc/org_access
-    [[ $(aws sts get-caller-identity --query Account --output text) == ${ORG_MASTER_ACCOUNT} ]] || \
-        die "fororganization runs only in Master account ${ORG_MASTER_ACCOUNT}"
-    
-    _allaccounts=$(_my_list_accounts --query Accounts[].Id --output text )
-    
-    CMD=${@}
-    
-    for account in $_allaccounts
+    for account in ${@}
     do
         echo "# account ${account} | $(ac2name ${account}) "
         if  [[ "${account}" == "${ORG_MASTER_ACCOUNT}" ]]||pushrole arn:aws:iam::${account}:role/${ORG_ACCOUNT_ACCESS_ROLE} 
@@ -137,6 +123,111 @@ fororganization()
         fi
     done
 }
+
+_source_org_access()
+{
+    # source ENV specific org_access or generic if not available
+
+    test -f ${C9TOOLSROOT}/etc/org_access && source ${C9TOOLSROOT}/etc/org_access
+    test -f ${C9TOOLSROOT}/etc/org_access.${AWS_ENV} && source ${C9TOOLSROOT}/etc/org_access.${AWS_ENV}
+}
+# --- fororganization
+#
+#       execute the command given as argument in all accounts of the organization
+#       this function should run in MASTER account and assumes OrgAccAccRole in member accounts
+#
+fororganization()
+{
+    _source_org_access
+
+    [[ $(aws sts get-caller-identity --query Account --output text) == ${ORG_MASTER_ACCOUNT} ]] || \
+        die "fororganization runs only in Master account ${ORG_MASTER_ACCOUNT}"
+    
+    _allaccounts=$(_my_list_accounts --query Accounts[].Id --output text )
+    
+    export CMD=${@}
+    
+    _CMDforaccountlist ${_allaccounts}
+    
+}
+
+ac2ou()
+{
+    aws organizations describe-organizational-unit --organizational-unit-id $( \
+        aws organizations list-parents --child-id ${1} --query Parents[].Id --output text ) \
+    --query OrganizationalUnit.Name --output text 
+}
+
+_findOUidr()
+{
+    local OU=${1}
+    local SPath=${2}
+    
+    for _ou in $( aws organizations list-children --parent-id ${3} --child-type ORGANIZATIONAL_UNIT --query 'Children[].Id' --output text )
+    do 
+        _ouName=$( aws organizations describe-organizational-unit --organizational-unit-id ${_ou} --query OrganizationalUnit.Name --output text )
+        echo ">> $SPath -- $_ouName -- ${OU}" >&2
+        if [ ${OU} == ${_ouName} ]
+        then
+            echo ${_ou}
+        else
+            _findOUidr ${OU} ${SPath}${_ouName}/ ${_ou}
+        fi
+    done
+    
+}
+
+_ou2ouId()
+{
+    OU=${1}
+
+    _rootID=$(aws organizations list-roots --query 'Roots[].Id' --output text)
+
+    _findOUidr ${OU} / ${_rootID}
+
+}
+
+ou2acs()
+{
+    aws organizations list-accounts-for-parent --parent-id $(_ou2ouId ${1}) --query 'Accounts[].Id' --output text
+}
+
+forou()
+{
+    OU=${1}
+    shift
+
+    export CMD=${@}
+
+    _source_org_access
+
+    [[ $(aws sts get-caller-identity --query Account --output text) == ${ORG_MASTER_ACCOUNT} ]] || \
+        die "fororganization runs only in Master account ${ORG_MASTER_ACCOUNT}"
+    
+    _allaccounts=$( ou2acs ${OU} )
+
+    _CMDforaccountlist ${_allaccounts}
+
+}
+
+_list_profiles()
+{
+    grep -h '\[profile .*\]' ${AWS_CONFIG_FILE:-~/.aws/config} |  sed 's/profile //' | tr -d '[]'
+}
+
+forprofiles()
+{
+    local AWS_DEFAULT_PROFILE
+
+    for AWS_DEFAULT_PROFILE in $(_list_profiles)
+    do
+        _act=$(aws sts get-caller-identity --query Account --output text )
+        _me=$(aws sts get-caller-identity --query Arn --output text | cut -f6 -d: )
+        echo "# ${AWS_DEFAULT_PROFILE} | ${_act} | ${_me} | "
+        eval ${@}
+    done
+}
+
 # --- fororganizationJSON
 #
 #       execute the command given as argument in all accounts of the organization
@@ -144,33 +235,7 @@ fororganization()
 #
 #       output in JSON format
 #
-fororganizationJSON()
-{
-    source ${C9TOOLSROOT}/etc/org_access
-    [[ $(aws sts get-caller-identity --query Account --output text) == ${ORG_MASTER_ACCOUNT} ]] || \
-        die "fororganization runs only in Master account ${ORG_MASTER_ACCOUNT}"
-    
-    _allaccounts=$(_my_list_accounts --query Accounts[].Id --output text  )
-    _frst=false
-    CMD=${@}
-    
-    echo '{ "Results" : ['
-    for account in $_allaccounts
-    do
-        if [[ "${_frst}" == "false" ]]
-        then
-            _frst=true
-        else
-            echo ','
-        fi
-        [[ "${account}" == "${ORG_MASTER_ACCOUNT}" ]]|| pushrole arn:aws:iam::${account}:role/${ORG_ACCOUNT_ACCESS_ROLE} 
-            eval ${CMD} > /tmp/$$.tmp || _frst=false
-        [[ "${account}" == "${ORG_MASTER_ACCOUNT}" ]] || poprole
-        [[ "${_frst}" == "true" ]] && ( cat /tmp/$$.tmp | jq --arg id ${account} --arg name "$(ac2name ${account})" '{ Account: $id, AccountName: $name } + .' )
-        
-    done
-    echo ']}'
-}
+
 # --- _pre_list_accounts
 #
 #       before calling aws list-accounts assume LIST_ACCOUNTS_ROLE in ORG_MASTER_ACCOUNT when necessary
@@ -233,12 +298,159 @@ name2ac()
 get_accountlist()
 {
     FIELDS=${1:-"Name,Id"}
-    
-    
+     
     _my_list_accounts --query 'Accounts[].['${FIELDS}']' --output text | tr '\t' ','
     
 }
 
+awsenv()
+{
+    if [ $# -ne 1 ] 
+    then
+        if test -t 0
+        then
+            max=$( ls ~/.aws/config.d | wc -l | tr -d ' ' )
+            ls ~/.aws/config.d | awk '{ print NR, $0 }' | column 
+            echo -n "Enter environment number [1-${max}]> "; read n
+            if test -n "$n" -a "$n" -gt 0 -a "$n" -le $max 2>/dev/null
+            then
+                export AWS_ENV=$( ls ~/.aws/config.d | sed -n ${n}p )
+            else
+                error "Value out of range, environment remains $AWS_ENV"
+            fi
+        else
+            error "Usage: $0 [environment]  -- without parameter interactive mode reads from tty"
+        return 1
+        fi
+    else
+        AWS_ENV=${1}
+    fi
+
+    if [ "${AWS_ENV}" = "default" ]
+    then
+        unset AWS_CONFIG_FILE AWS_SHARED_CREDENTIALS_FILE ${AWS_ENV}
+        export AWS_DEFAULT_PROFILE=default
+    else
+        export AWS_CONFIG_FILE=~/.aws/config.d/${AWS_ENV}
+        export AWS_SHARED_CREDENTIALS_FILE=~/.aws/credentials.d/${AWS_ENV}
+        export AWS_DEFAULT_PROFILE=default
+
+    fi
+    _source_org_access
+}
+
+function awsprofile() 
+{
+  if [ $# -ne 1 ]
+  then # interactive
+    if test -t 0
+    then
+      local max=$(_list_profiles | wc -l | tr -d ' ')
+
+      _list_profiles | awk '{ print NR, $0 }' | column 
+
+      echo -n "Enter profile number [1-${max}]> "; read n
+      if test -n "$n" -a "$n" -gt 0 -a "$n" -le $max 2>/dev/null
+      then
+        export AWS_DEFAULT_PROFILE=$( _list_profiles |  sed -n ${n}p )
+      else
+        error "Value out of range, profile remains $AWS_DEFAULT_PROFILE"
+      fi
+    else
+      error "Usage: $0 [profile]  -- without parameter interactive mode reads from tty"
+      return 1
+    fi
+  else # process arg
+    if grep -q "^\[profile $1\]" ${AWS_CONFIG_FILE:-~/.aws/config}
+    then
+      export AWS_DEFAULT_PROFILE=$1
+    else
+      error "[$1]: No such profile."
+      return 2
+    fi
+  fi  
+}
+
+function _find_mfa_arn()
+{
+    cat ${AWS_SHARED_CREDENTIALS_FILE} | sed -n "/^\[${1}\]/,/^\[/p" | grep mfa_serial | cut -f2 -d = | tr -d ' '
+}
+
+function awsmfa () 
+{
+    local AWS_USER_PROFILE=${AWS_DEFAULT_PROFILE}
+    local AWS_MFA_PROFILE=${AWS_DEFAULT_PROFILE}.mfa
+    local ARN_OF_MFA=$(_find_mfa_arn ${AWS_MFA_PROFILE})
+
+    if test -z ${ARN_OF_MFA}
+    then
+        error "No MFA profile for ${AWS_USER_PROFILE} in ${AWS_SHARED_CREDENTIALS_FILE}"
+        return 1
+    fi
+
+    if [ $# -ne 1 ]
+    then
+        if test -t 
+        then
+            echo -n "Enter MFA Token value: " && read mfa
+        else
+            error "Usage: $0 token_value"
+            return 1
+        fi
+    fi
+
+    
+    local MFA_VALUE=${1:-$mfa}
+
+    local DURATION=3600
+
+    echo == $ARN_OF_MFA -- $MFA_VALUE
+
+    read _AWS_ACCESS_KEY_ID _AWS_SECRET_ACCESS_KEY _AWS_SESSION_TOKEN <<< \
+    $( aws --profile $AWS_USER_PROFILE sts get-session-token \
+      --duration $DURATION  \
+      --serial-number $ARN_OF_MFA \
+      --token-code $MFA_VALUE \
+      --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]'\
+      --output text  )
+
+    if [ -z "${_AWS_ACCESS_KEY_ID}" ]
+    then
+        return
+    fi
+
+    aws --profile ${AWS_MFA_PROFILE} configure set aws_access_key_id "${_AWS_ACCESS_KEY_ID}" 
+    aws --profile ${AWS_MFA_PROFILE} configure set aws_secret_access_key "${_AWS_SECRET_ACCESS_KEY}" 
+    aws --profile ${AWS_MFA_PROFILE} configure set aws_session_token "${_AWS_SESSION_TOKEN}"
+
+    AWS_DEFAULT_PROFILE=${AWS_MFA_PROFILE}    
+}
+
+c9toolsinit()
+{
+
+    PS1='\h:\W \u[${AWS_DEFAULT_PROFILE}%${AWS_ENV}]$ '
+
+    # enable command completion
+
+    complete -C `which aws_completer` aws
+    which eb_completion.bash > /dev/null && . eb_completion.bash
+
+    if test -f ~/.awsdefaultenv
+    then
+        awsenv $(cat ~/.awsdefaultenv)
+    else
+        log "No ~/.awsdefaultenv -- using ~/.aws/[config | credentials]"
+    fi
+
+    if test -f ~/.awsdefaultprofile
+    then
+        awsprofile $(cat ~/.awsdefaultprofile)
+    else
+        echo "No .awsdefaultprofile -- using default" >&2
+        awsprofile default
+    fi
+}
 
 # --- whoiam
 #
@@ -334,4 +546,4 @@ die()
 
 # make functions available in scripts and other sub-shells
 
-export -f $(myfunctions)
+export -f $(myfunctions | grep -v ^_)
