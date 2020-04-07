@@ -5,8 +5,8 @@
 export C9TOOLSROOT=${C9TOOLSROOT:=~/.c9tools}
 
 ORG_ACCESS_FILE=${C9TOOLSROOT}/etc/org_access
-if !test -z ${AWSENV} ; then
-  ORG_ACCESS_FILE=${ORG_ACCESS_FILE}.${AWSENV}
+if ! test -z ${AWS_ENV} ; then
+  ORG_ACCESS_FILE=${ORG_ACCESS_FILE}.${AWS_ENV}
 fi
 
 # -- main
@@ -26,7 +26,7 @@ echo "Configuring ${AWS_ENV:-default} environment"
 echo -n "Enter 12 digit AWS accountnumber of Organization Master Account [${ORG_MASTER_ACCOUNT}] : "
 read accountId
 ORG_MASTER_ACCOUNT=${accountId:-${ORG_MASTER_ACCOUNT}}
-echo -n "Enter name for CrossAccount Role [${ORG_ACCOUNT_ACCESS_ROLE}]: "
+echo -n "Enter name for CrossAccount Role [${ORG_ACCOUNT_ACCESS_ROLE:=OrganizationAccountAccessRole}]: "
 read oar
 ORG_ACCOUNT_ACCESS_ROLE=${oar:-${ORG_ACCOUNT_ACCESS_ROLE}} 
 

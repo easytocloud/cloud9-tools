@@ -125,9 +125,18 @@ _CMDforaccountlist()
 _source_org_access()
 {
     # source ENV specific org_access or generic if not available
-
-    test -f ${C9TOOLSROOT}/etc/org_access && source ${C9TOOLSROOT}/etc/org_access
-    test -f ${C9TOOLSROOT}/etc/org_access.${AWS_ENV} && source ${C9TOOLSROOT}/etc/org_access.${AWS_ENV}
+    if test -z ${AWS_ENV}
+    then
+        _OAF=${C9TOOLSROOT}/etc/org_access
+    else
+        _OAF=${C9TOOLSROOT}/etc/org_access.${AWS_ENV}
+    fi
+    if test -f ${_OAF}
+    then
+        source ${_OAF}
+    else
+        error "Environment not setup - run ${C9TOOLSROOT}/bin/setup for current environment"
+    fi
 }
 # --- fororganization
 #
@@ -318,7 +327,7 @@ awsenv()
 
     if [ "${AWS_ENV}" = "default" ]
     then
-        unset AWS_CONFIG_FILE AWS_SHARED_CREDENTIALS_FILE ${AWS_ENV}
+        unset AWS_CONFIG_FILE AWS_SHARED_CREDENTIALS_FILE AWS_ENV
         export AWS_DEFAULT_PROFILE=default
     else
         export AWS_CONFIG_FILE=~/.aws/config.d/${AWS_ENV}
