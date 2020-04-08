@@ -69,7 +69,7 @@ pushrole()
     let _roleindex+=1
     
     setawsvars $( aws sts assume-role --role-arn $_wishrole ${_external} --role-session pushed_role \
-        --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' --output text )
+        --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' --output text 2>/dev/null )
        
     if [ -z  "${AWS_ACCESS_KEY_ID}" ]
     then
@@ -103,23 +103,97 @@ poprole()
     debug "poprole: popped, remaining $_roleindex on stack"
 }
 
-# --- foraccountlist
+_CMDoutstart()
+{
+    if [ "${_cmdout}" == 'JSON' ]
+    then
+        echo '{'
+        echo '  "Results": ['
+    fi
+}
+
+_CMDoutacctheader()
+{
+    account=${1}
+    if [ "${_cmdout}" == 'JSON' ]
+    then
+        echo '    {'
+        echo '      "AccountId": "'${account}'",'
+        echo '      "AccountName": "'$(ac2name $account)'",'
+        echo -n '      "AccountResult": '
+    else
+        echo "# account ${account} | $(ac2name ${account}) "
+    fi
+}
+
+_CMDoutacct()
+{
+    if [ "${_cmdout}" == 'JSON' ]
+    then
+        eval ${@} | sed -e '2,$s/^/    /' -e '$s/^/  /'
+    else 
+        eval ${@}
+    fi
+}
+
+_CMDoutacctfooter()
+{
+    if [ "${_cmdout}" == 'JSON' ]
+    then
+        echo -n "    }"
+    fi
+}
+_CMDoutacctnext()
+{
+ if [ "${_cmdout}" == 'JSON' ]
+    then
+        echo  ","
+    fi   
+}
+
+_CMDoutend()
+{
+    if [ "${_cmdout}" == 'JSON' ]
+    then
+        echo ''
+        echo '  ]'
+        echo '}'
+    fi
+}
+
+# --- CMDforaccountlist
 #
 # execute ${CMD} in each of the accounts in parameter list assuming ${ORG_ACCOUNT_ACCESS_ROLE}
 
 _CMDforaccountlist()
 {
+    local _first=true
+
+    _CMDoutstart
+
     for account in ${@}
     do
-        echo "# account ${account} | $(ac2name ${account}) "
+        if [ "${_first}" == true ]
+        then    
+            _first=false
+        else    
+            _CMDoutacctnext
+        fi
+
+        _CMDoutacctheader ${account}
+
         if  [[ "${account}" == "${ORG_MASTER_ACCOUNT}" ]]||pushrole arn:aws:iam::${account}:role/${ORG_ACCOUNT_ACCESS_ROLE} 
         then
-            eval ${CMD}
+            _CMDoutacct ${CMD}
             [[ "${account}" == "${ORG_MASTER_ACCOUNT}" ]]||poprole
         else
-            echo "--> no access!"
+            _CMDoutacct echo '\"no access to role ${ORG_ACCOUNT_ACCESS_ROLE}\"'
         fi
+
+        _CMDoutacctfooter
     done
+
+    _CMDoutend
 }
 
 _source_org_access()
