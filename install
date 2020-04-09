@@ -4,7 +4,6 @@
 
 export C9TOOLSROOT=${C9TOOLSROOT:=~/.c9tools}
 
-
 # -- main
 
 # if target directory exists, this is just an update (bin only)
@@ -39,11 +38,11 @@ export C9TOOLSROOT=${C9TOOLSROOT}
 export MAKEFILES=${C9TOOLSROOT}/etc/Makefile.rules
 
 export PATH="\$PATH:\${C9TOOLSROOT}/bin"
-[[ -s "${C9TOOLSROOT}/bin/_functions" ]] && source "${C9TOOLSROOT}/bin/_functions" 
+[[ -s "${C9TOOLSROOT}/bin/_functions" ]] && source "${C9TOOLSROOT}/bin/_functions" && c9toolsinit
+
 EOF
 
 # -- add c9tools profile to shell profiles
 
-grep -q '.profile_c9tools' ~/.bash_profile || echo source ~/.profile_c9tools >> ~/.bash_profile
-grep -q '.profile_c9tools' ~/.profile || echo source ~/.profile_c9tools >> ~/.profile
-
+grep -q '.profile_c9tools' ~/.bash_profile || echo 'source ~/.profile_c9tools' >> ~/.bash_profile
+grep -q '.profile_c9tools' ~/.profile      || echo 'source ~/.profile_c9tools' >> ~/.profile
