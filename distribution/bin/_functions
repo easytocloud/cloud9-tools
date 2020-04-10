@@ -297,7 +297,7 @@ forou()
 
 _list_profiles()
 {
-    grep -h '\[profile .*\]' ${AWS_CONFIG_FILE:-~/.aws/config} |  sed 's/profile //' | tr -d '[]'
+    test -f ${AWS_CONFIG_FILE:-~/.aws/config} && grep -h '\[profile .*\]' ${AWS_CONFIG_FILE:-~/.aws/config} |  sed 's/profile //' | tr -d '[]'
 }
 
 forprofiles()
@@ -438,7 +438,7 @@ awsprofile()
       return 1
     fi
   else # process arg
-    if grep -q "^\[profile $1\]" ${AWS_CONFIG_FILE:-~/.aws/config}
+    if grep -q "^\[profile $1\]" ${AWS_CONFIG_FILE:-~/.aws/config} 2> /dev/null
     then
       export AWS_DEFAULT_PROFILE=$1
     else
