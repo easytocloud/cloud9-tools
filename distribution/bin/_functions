@@ -511,13 +511,14 @@ c9toolsinit()
     # enable command completion
 
     complete -C `which aws_completer` aws
-    which eb_completion.bash > /dev/null && . eb_completion.bash
+    #which eb_completion.bash > /dev/null && . eb_completion.bash
 
     if test -f ~/.awsdefaultenv
     then
         awsenv $(cat ~/.awsdefaultenv)
     else
         log "No ~/.awsdefaultenv -- using ~/.aws/[config | credentials]"
+        awsenv default
     fi
 
     if test -f ~/.awsdefaultprofile
