@@ -63,9 +63,9 @@ pushrole()
     
     debug "pushrole: about to assume ${_wishrole} ${_external}"
     
-    O_AKID[${_roleindex}]="${AWS_ACCESS_KEY_ID}"
-      O_SK[${_roleindex}]="${AWS_SECRET_ACCESS_KEY}"
-     O_TOK[${_roleindex}]="${AWS_SESSION_TOKEN}"
+    O_AKID[${_roleindex}]=${AWS_ACCESS_KEY_ID}
+      O_SK[${_roleindex}]=${AWS_SECRET_ACCESS_KEY}
+     O_TOK[${_roleindex}]=${AWS_SESSION_TOKEN}
     let _roleindex+=1
     
     setawsvars $( aws sts assume-role --role-arn $_wishrole ${_external} --role-session pushed_role \
@@ -98,7 +98,7 @@ poprole()
         return
     fi
     
-    setawsvars "${O_AKID[${_roleindex}]}" "${O_SK[${_roleindex}]}" "${O_TOK[${_roleindex}]}"
+    setawsvars ${O_AKID[${_roleindex}]} ${O_SK[${_roleindex}]} ${O_TOK[${_roleindex}]}
   
     debug "poprole: popped, remaining $_roleindex on stack"
 }
@@ -412,7 +412,7 @@ awsenv()
     _source_org_access
 }
 
-function awsprofile() 
+awsprofile() 
 {
   if [ $# -ne 1 ]
   then # interactive
@@ -444,12 +444,12 @@ function awsprofile()
   fi  
 }
 
-function _find_mfa_arn()
+_find_mfa_arn()
 {
     cat ${AWS_SHARED_CREDENTIALS_FILE} | sed -n "/^\[${1}\]/,/^\[/p" | grep mfa_serial | cut -f2 -d = | tr -d ' '
 }
 
-function awsmfa () 
+awsmfa () 
 {
     local AWS_USER_PROFILE=${AWS_DEFAULT_PROFILE}
     local AWS_MFA_PROFILE=${AWS_DEFAULT_PROFILE}.mfa
@@ -479,13 +479,13 @@ function awsmfa ()
 
     echo == $ARN_OF_MFA -- $MFA_VALUE
 
-    read _AWS_ACCESS_KEY_ID _AWS_SECRET_ACCESS_KEY _AWS_SESSION_TOKEN <<< \
-    $( aws --profile $AWS_USER_PROFILE sts get-session-token \
-      --duration $DURATION  \
-      --serial-number $ARN_OF_MFA \
-      --token-code $MFA_VALUE \
-      --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]'\
-      --output text  )
+    read _AWS_ACCESS_KEY_ID _AWS_SECRET_ACCESS_KEY _AWS_SESSION_TOKEN <<< $( \
+    aws --profile ${AWS_USER_PROFILE} sts get-session-token \
+        --duration $DURATION  \
+        --serial-number $ARN_OF_MFA \
+        --token-code $MFA_VALUE \
+        --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
+        --output text  )
 
     if [ -z "${_AWS_ACCESS_KEY_ID}" ]
     then
@@ -523,6 +523,8 @@ c9toolsinit()
         echo "No .awsdefaultprofile -- using default" >&2
         awsprofile default
     fi
+    _source_org_access
+    export 
 }
 
 # --- whoiam
