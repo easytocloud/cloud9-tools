@@ -35,10 +35,14 @@ setawsvars()
         AWS_SECRET_ACCESS_KEY=${2}
     fi
 
+    # Make sure to make _ID empty when length is 0
+
+    ! test -n "${AWS_ACCESS_KEY_ID}" && unset AWS_ACCESS_KEY_ID && export AWS_ACCESS_KEY_ID
+
     case ${AWS_ACCESS_KEY_ID} in
     AK*)    AWS_SESSION_TOKEN=""
             ;;
-    *)      if [ $# -lt 3 ]
+    A*)      if [ $# -lt 3 ]
             then
                 echo -n "please enter Session Token: " && read AWS_SESSION_TOKEN
             else
@@ -98,7 +102,7 @@ poprole()
         return
     fi
     
-    setawsvars ${O_AKID[${_roleindex}]} ${O_SK[${_roleindex}]} ${O_TOK[${_roleindex}]}
+    setawsvars "${O_AKID[${_roleindex}]}" "${O_SK[${_roleindex}]}" "${O_TOK[${_roleindex}]}"
   
     debug "poprole: popped, remaining $_roleindex on stack"
 }
