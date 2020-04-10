@@ -527,8 +527,8 @@ c9toolsinit()
         echo "No .awsdefaultprofile -- using default" >&2
         awsprofile default
     fi
-    _source_org_access
-    export 
+    
+     
 }
 
 # --- whoiam
