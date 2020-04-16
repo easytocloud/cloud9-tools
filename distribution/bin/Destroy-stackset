@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+# $1 stackset name
+
+#set -vx
+
+OPERATION="delete-stack-set"
+OPERATIONAL_PREFS=""
+OPERATIONAL_FLAG=""
+
+if 
+	aws cloudformation describe-stack-set --stack-set-name $1 > /dev/null 2>&1
+then
+	OPERATION="delete-stack-instances"
+	OPERATIONAL_PREFS='{"FailureTolerancePercentage":100,"MaxConcurrentPercentage":100}'
+	OPERATIONAL_FLAG="--operation-preferences"
+	current_accounts=$(aws cloudformation list-stack-instances --query Summaries[].Account --output text --stack-set-name $1)
+fi
+
+debug ${OPERATION}
+debug ${OPERATIONAL_PREFS}
+
+read OP <<< $(aws cloudformation ${OPERATION} \
+    			--stack-set-name $1 \
+    			--regions eu-west-1 \
+				--query OperationId \
+				--output text \
+				--accounts ${current_accounts} \
+				--no-retain-stacks \
+				${OPERATIONAL_FLAG} "${OPERATIONAL_PREFS}" )
+
+if [ "${OPERATION}" == "delete-stack-set" ]
+then	
+	echo ${OP}
+	echo 'no programmatic way to wait for completion, sleep 15 in stead'
+	sleep 15
+else
+	wait-stackset-operation $1 ${OP}
+	aws cloudformation delete-stack-set --stack-set-name $1
+fi
+
+rm -f .deployed/$1.s?
+

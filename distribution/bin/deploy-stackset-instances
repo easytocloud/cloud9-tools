@@ -1,0 +1,174 @@
+#! /usr/bin/env bash
+
+# $1 stackset name
+
+STACKSET_NAME="${1}"
+
+source ${HCTOOLSROOT}/etc/cfn_paths
+
+# config
+
+_debug=false
+
+OPERATIONAL_PREFS='{
+    "FailureTolerancePercentage": 25,
+    "MaxConcurrentPercentage": 25
+}'
+
+# overrule standard operation-preferences?
+ 
+test -f config/${1}.ops && OPERATION_PREFS=$(jq -c . config/${1}.ops)
+
+## -- crup --
+#
+# $1 is stackset name
+# $2 is operation
+# $3 .. accounts
+
+function crup()
+{
+	CMDFILE=/tmp/awscmd
+
+	debug "About to ${2} ${1} using ${CMDFILE}"
+	
+	_name=$1
+	shift
+	_oper=$1
+	shift
+	_accounts=$*
+	
+	debug -- account list = ${_accounts}
+	debug -- number of accounts is $#
+	
+	if test $# -eq 0
+	then
+		log "empty account set - skipping operation"
+		return
+	fi
+	
+	cat > ${CMDFILE} << EOF
+	aws cloudformation ${_oper} \\
+	    --stack-set-name ${_name} \\
+	    --regions eu-west-1 \\
+	    --accounts ${_accounts} \\
+   		--query OperationId \\
+EOF
+	
+test -n "${PARAMETERS}" && echo "--parameter-overrides '${PARAMETERS}' \\"  >> ${CMDFILE}
+test -n "${OPERATION_PREFS}" && echo "--operation-preferences '${OPERATION_PREFS}' \\" >> ${CMDFILE}
+
+echo "--output text"  >> ${CMDFILE}
+		 
+	chmod 755 ${CMDFILE}
+	debug $(cat ${CMDFILE})
+	
+	OP=$( ${CMDFILE} )
+	
+	debug "OperationId is ${OP}"
+	
+	wait-stackset-operation "${_name}" "${OP}"
+}
+
+## -- MAIN --
+
+	# let's first check the accounts file for config errors
+	# - duplicate accountIds
+	#
+
+	# create /tmp/act.all with all account, one per line
+	
+	jq -c '.[].AccountIds' ${STACKSET_ACTS} | tr -d '[]"' | tr ',' '\n' | sort > /tmp/act.all
+
+	# the sorted file should contain the same (amount of) lines as the sort-uniqued version
+	# if not, issue a fatal message
+	
+	sort -u /tmp/act.all > /tmp/act.uniq
+	if test $(cat /tmp/act.all | wc -l ) -ne $(cat /tmp/act.uniq | wc -l)
+	then
+		die AccountIds $(sdiff /tmp/act.all /tmp/act.uniq | grep '<' | cut -f 1 -d ' ') occurs more than once in ${STACKSET_ACTS}
+	fi
+
+	# if the stack-set has any instances, 
+	#   - the account(s) where it is deployed that don't show up in 'all' should have the instaces deleted
+	#	- existing instances should be updated 
+	#	- new instances have to be created
+	
+	if
+		current_accounts=$(aws cloudformation list-stack-instances --query Summaries[].Account --output text --stack-set-name $1)
+		debug $0 current_accounts is $current_accounts
+		test -n "${current_accounts}"
+	then
+		OPERATION=update-stack-instances
+		
+		# if this is an update, let's first see what accounts are new/obsolete
+		# the actual update sequence is
+		
+		# 1 - delete unnecessary instances first
+		# 2 - update existing ones (might have been moved to different ParameterOverrides section!)
+		# 3 - deploy new ones
+	
+		echo $current_accounts   | tr '[:space:] ' '\n' | tr -s '[:space:]' | sort > /tmp/act.cur
+		cat /tmp/act.all         | tr '[:space:] ' '\n' | tr -s '[:space:]' | sort > /tmp/act.req
+	
+		to_delete=$(sdiff /tmp/act.cur /tmp/act.req | grep '<' | tr -d '<' | tr -s '[:space:]'| tr  ['\n'] ' ')
+		to_create=$(sdiff /tmp/act.cur /tmp/act.req | grep '>' | tr -d '>' | tr -s '[:space:]'| tr  ['\n'] ' ')
+		to_update=$(sdiff /tmp/act.cur /tmp/act.req | grep -v '<' | grep -v '>' | cut -c1-12  | tr  ['\n'] ' ')
+		
+		#die "this is a bit too complex - right now only support for create, not for update"
+	else
+		# This stacket has no instances at all, just create
+		OPERATION=create-stack-instances
+		
+		to_create=$(cat /tmp/act.all | tr '[\n]' ' ' )
+		to_update=""
+		to_delete=""
+	fi
+	
+	debug to_delete = $to_delete
+	debug to_create = $to_create
+	debug to_update = $to_update
+	
+	# Any instances to delete?
+	
+	if test -n "${to_delete}"
+	then
+		debug "About to delete unnecessary instances"
+		OPID=$(aws cloudformation delete-stack-instances \
+	    			--stack-set-name ${STACKSET_NAME} \
+	    			--regions eu-west-1 \
+					--query OperationId \
+					--output text \
+					--accounts ${to_delete} \
+					--no-retain-stacks \
+					--operation-preferences "${OPERATIONAL_PREFS}" )
+		wait-stackset-operation "${STACKSET_NAME}" "${OPID}"
+	fi
+
+	# now process the accounts file and per block update and create instances
+
+	let index=0
+	while
+		actset=$(jq -ec .[${index}] ${STACKSET_ACTS})
+	do
+		let index=index+1
+		debug $actset 
+		
+		accounts=$(echo "${actset}" | jq -c .AccountIds | tr -d '[]"' | tr ',' '\n' | sort | tr '\n' ' ')
+		debug "Accounts: $accounts"
+		
+		PARAMETERS=$(echo "${actset}" | jq -c .ParameterOverrides )
+		test "${PARAMETERS}" == "null" && PARAMETERS=""
+		debug "Parameters: >${PARAMETERS}<"
+		
+		update_acts=$(filterin "${accounts}" "${to_update}")
+		create_acts=$(filterin "${accounts}" "${to_create}")
+
+		debug update_acts = $update_acts
+		debug create_acts = $create_acts
+		
+		crup "${STACKSET_NAME}" create-stack-instances  $create_acts
+		crup "${STACKSET_NAME}" update-stack-instances  $update_acts
+		
+	done
+	exit
+

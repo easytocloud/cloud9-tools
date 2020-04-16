@@ -1,0 +1,6 @@
+#! /usr/bin/env bash
+
+log deploying StacksetExecution role in all accounts in your organization
+
+fororganization ${HCTOOLSROOT}/bin/Deploy-stackset-execution-role
+

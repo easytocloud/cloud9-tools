@@ -1,0 +1,46 @@
+#
+#
+# Some PATH settings
+#
+# When changing these settings, make sure to change cfn_paths accordingly
+#
+
+DEPDIR := .deployed
+SRCDIR := templates
+CNFDIR := config
+
+# do not remove 'intermediate' files
+
+.PRECIOUS: $(DEPDIR)/%.si $(DEPDIR)/%.sa $(DEPDIR)/%.ss
+
+## prerequisites
+
+deps: /usr/bin/jq /usr/local/bin/yq /usr/local/bin/cfn-lint
+	@[ -d $(DEPDIR) ] || mkdir $(DEPDIR)
+	
+/usr/bin/jq:
+	sudo yum install jq
+	
+/usr/local/bin/yq:
+	sudo pip install yq
+	
+/usr/local/bin/cfn-lint:
+	sudo pip install cfn-lint
+
+# general rules for stacksets
+
+$(DEPDIR)/%.ss: $(SRCDIR)/%.yaml $(CNFDIR)/%.parameters
+	echo To build/update stackset based on changed $? file
+	deploy-stackset $* $< $@
+	touch $@
+	echo Touched $@ file for stackset $*
+
+$(DEPDIR)/%.sa: $(CNFDIR)/%.accounts
+	echo To build/update instances by accounts for stackset $* 
+	deploy-stackset-instances $* 
+	touch $@
+	echo Touched $@ file for stackset $*
+	
+$(DEPDIR)/%.si: $(DEPDIR)/%.ss $(DEPDIR)/%.sa
+	touch $@
+	echo Touched $@ file for stackset $* 

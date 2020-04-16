@@ -1,0 +1,41 @@
+#! /usr/bin/env bash
+#
+# stack-set-wait
+#
+# $1 stack-set-name
+# $2 operation-id
+#
+
+SLEEP_INITIAL=5
+SLEEP_LOOP=15
+
+export stack_set_name=$1
+export operation_id=$2
+
+# fail on non-non-zero operation ID
+
+[[ "${operation_id}" == "0" ]] && exit 1
+[[ "${operation_id}" == ""  ]] && exit 1
+
+sleep ${SLEEP_INITIAL}
+
+# loop waiting for operation to complete
+while
+	read RC <<< $(aws cloudformation describe-stack-set-operation \
+				--stack-set-name ${stack_set_name} \
+				--operation-id "${operation_id}" \
+				--query StackSetOperation.Status \
+				--output text )
+											  
+	debug return code $RC
+	[ "${RC}" != "SUCCEEDED" ]
+do
+	case $RC in
+		"FAILED")	exit 1
+					;;		
+		"STOPPED")	exit 1
+					;;
+	esac
+	sleep ${SLEEP_LOOP}
+done
+exit 0

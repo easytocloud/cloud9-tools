@@ -1,0 +1,35 @@
+#! /usr/bin/env bash
+
+log deploying StackSets Admin role in current account
+
+cat  > /tmp/AWSCloudFormationStackSetAdminRole.yaml << EOT
+AWSTemplateFormatVersion: 2010-09-09
+Description: Configure the AWSCloudFormationStackSetAdministrationRole to enable use of AWS CloudFormation StackSets.
+
+Resources:
+  AdministrationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: AWSCloudFormationStackSetAdministrationRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: AssumeRole-AWSCloudFormationStackSetExecutionRole
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sts:AssumeRole
+                Resource:
+                  - "arn:aws:iam::*:role/AWSCloudFormationStackSetExecutionRole"
+EOT
+aws cloudformation deploy --template-file /tmp/AWSCloudFormationStackSetAdminRole.yaml --stack-name StackSetAdminRole --capabilities CAPABILITY_NAMED_IAM
+rm /tmp/AWSCloudFormationStackSetAdminRole.yaml

@@ -1,0 +1,9 @@
+if test -n "${STACKSET_NAME}"
+then
+    STACKSET_YAML=templates/${STACKSET_NAME}.yaml
+    STACKSET_PARM=config/${STACKSET_NAME}.parameters
+    STACKSET_OPRS=config/${STACKSET_NAME}.ops
+    STACKSET_ACTS=config/${STACKSET_NAME}.accounts
+else
+    die "Source $0 after setting \$STACKSET_NAME"
+fi

@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+
+# $1 stackset name
+
+STACKSET_NAME=$1
+
+source ${HCTOOLSROOT}/etc/cfn_paths
+
+#set -vx
+debug=false
+
+CMDFILE=/tmp/awscmd
+
+
+OPERATION=create-stack-set
+OPERATION_PREFS=""
+PARAMETERS=""
+
+if 
+	aws cloudformation describe-stack-set --stack-set-name ${1} > /dev/null 2>&1
+then
+	OPERATION="update-stack-set"
+	# when updating, a stackset
+	# existing instances are updated too
+	# see if there are any operation-preferences for stackset-instance operations
+	test -f ${STACKSET_OPRS} && OPERATION_PREFS=$(jq -c . ${STACKSET_OPRS})
+fi
+
+test -f ${STACKSET_PARM} && PARAMETERS=$(jq -c . ${STACKSET_PARM})
+
+# compose and run a helper script
+
+cat > ${CMDFILE} << EOF
+aws cloudformation ${OPERATION} \\
+	--stack-set-name ${STACKSET_NAME} \\
+	--description "$(yq -r .Description ${STACKSET_YAML} )" \\
+	--capabilities CAPABILITY_NAMED_IAM \\
+	--template-body file://${STACKSET_YAML} \\
+	--query OperationId \\
+	--region eu-west-1 \\
+EOF
+
+test -n "${PARAMETERS}" 		&& echo "--parameters '${PARAMETERS}' \\" >> ${CMDFILE}
+test -n "${OPERATION_PREFS}"	&& echo "--operation-preferences '${OPERATION_PREFS}' \\" >> ${CMDFILE} 
+
+echo "--output text" >> ${CMDFILE} 
+
+chmod 755 ${CMDFILE}
+
+OP=$( ${CMDFILE} )
+debug OperationId is ${OP}
+
+if [ "${OPERATION}" == "create-stack-set" ]
+then	
+	
+	debug "-- no programmatic way to wait for completion of ${OPERATION}, will sleep 15s in stead"
+	sleep 15
+else
+	debug "-- waiting for ${OPERATION} to complete ..."
+	wait-stackset-operation $1 ${OP}
+fi
+exit 0

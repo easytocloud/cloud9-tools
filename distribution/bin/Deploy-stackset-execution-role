@@ -1,0 +1,51 @@
+#! /usr/bin/env bash
+#
+# run this script to deploy a role that can be assumed by StackSet Master Account
+#
+# In case of Holland Casino, currently the following StackSet Master accounts are in use:
+#
+# 676846737757 - hcmso
+# 204392078325 - _Main Holland Casino
+# 967558243597 - network account
+#
+# This list can be expanded in the policy doc below
+# The role is granted AdministratorAccess priviledges
+#
+# Deploy this role in all accounts in the organization:
+#
+# $ fororganization .hctools/bin/Deploy-stackset-execution-role
+#
+
+
+POLICY_DOC='{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": [
+          "arn:aws:iam::676846737757:root",
+          "arn:aws:iam::204392078325:root",
+          "arn:aws:iam::967558243597:root",
+          "arn:aws:iam::256928933720:root"
+        ]
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}'
+
+ROLE_NAME=AWSCloudFormationStackSetExecutionRole
+
+if
+    aws iam get-role --role-name ${ROLE_NAME} > /dev/null 2>&1
+then
+    echo updating role
+    aws iam update-assume-role-policy --role-name ${ROLE_NAME} --policy-document "${POLICY_DOC}"
+else
+    echo creating role
+    aws iam create-role        --role-name ${ROLE_NAME} --assume-role-policy-document "${POLICY_DOC}"
+    aws iam attach-role-policy --role-name ${ROLE_NAME} --policy-arn arn:aws:iam::aws:policy/AdministratorAccess
+fi
+
+aws iam get-role --role-name ${ROLE_NAME} --query Role.CreateDate
