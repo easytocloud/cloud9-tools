@@ -35,10 +35,10 @@ export C9TOOLSROOT=${C9TOOLSROOT}
 
 # Extend PATH & source functions
 
-export MAKEFILES=${C9TOOLSROOT}/etc/Makefile.rules
+export MAKEFILES=\${C9TOOLSROOT}/etc/Makefile.rules
 
 export PATH="\$PATH:\${C9TOOLSROOT}/bin"
-[[ -s "${C9TOOLSROOT}/bin/_functions" ]] && source "${C9TOOLSROOT}/bin/_functions" && c9toolsinit
+[[ -s "\${C9TOOLSROOT}/bin/_functions" ]] && source "\${C9TOOLSROOT}/bin/_functions" && c9toolsinit
 
 EOF
 

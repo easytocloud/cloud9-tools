@@ -225,9 +225,12 @@ fororganization()
 {
     _source_org_access
 
-    [[ $(aws sts get-caller-identity --query Account --output text) == ${ORG_MASTER_ACCOUNT} ]] || \
-        die "fororganization runs only in Master account ${ORG_MASTER_ACCOUNT}"
-    
+    if [[ $(aws sts get-caller-identity --query Account --output text) != ${ORG_MASTER_ACCOUNT} ]]
+    then
+        error "fororganization runs only in Master account ${ORG_MASTER_ACCOUNT}" 
+        return 1
+    fi
+
     _allaccounts=$(_my_list_accounts --query Accounts[].Id --output text )
     
     export CMD=${@}
@@ -627,5 +630,3 @@ die()
 # make functions available in scripts and other sub-shells
 
 export -f $(myfunctions | grep -v ^_)
-
-c9toolsinit
