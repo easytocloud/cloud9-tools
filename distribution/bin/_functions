@@ -627,3 +627,5 @@ die()
 # make functions available in scripts and other sub-shells
 
 export -f $(myfunctions | grep -v ^_)
+
+c9toolsinit

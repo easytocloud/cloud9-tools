@@ -2,7 +2,7 @@
 
 # Make sure to set C9TOOLSROOT to a directory that you have full access to!
 
-export C9TOOLSROOT=${C9TOOLSROOT:=~/.c9tools}
+export C9TOOLSROOT=${C9TOOLSROOT:=~/.aws/c9tools}
 
 # -- main
 
