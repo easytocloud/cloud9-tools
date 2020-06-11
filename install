@@ -8,7 +8,7 @@ export C9TOOLSROOT=${C9TOOLSROOT:=~/.aws/c9tools}
 
 # if target directory exists, this is just an update (bin only)
 
-if test -f ${C9TOOLSROOT}/etc/org_access
+if test -f ${C9TOOLSROOT}/etc/org_access.*
 then
   echo "Updating tools --> only copying distribution/bin to ${C9TOOLSROOT}/bin"
   cp -rp distribution/bin/* ${C9TOOLSROOT}/bin

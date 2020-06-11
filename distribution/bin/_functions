@@ -213,7 +213,7 @@ _source_org_access()
     then
         source ${_OAF}
     else
-        error "Environment not setup - run ${C9TOOLSROOT}/bin/setup for current environment"
+        error "Environment not setup - run ${C9TOOLSROOT}/bin/c9toolssetup for current environment"
     fi
 }
 # --- fororganization
@@ -409,11 +409,13 @@ awsenv()
     if [ "${AWS_ENV}" = "default" ]
     then
         unset AWS_CONFIG_FILE AWS_SHARED_CREDENTIALS_FILE AWS_ENV
-        export AWS_DEFAULT_PROFILE=default
+        # export AWS_DEFAULT_PROFILE=default
+        export AWS_DEFAULT_PROFILE=$( _list_profiles |  sed -n 1p )
     else
         export AWS_CONFIG_FILE=~/.aws/config.d/${AWS_ENV}
         export AWS_SHARED_CREDENTIALS_FILE=~/.aws/credentials.d/${AWS_ENV}
-        export AWS_DEFAULT_PROFILE=default
+        # export AWS_DEFAULT_PROFILE=default
+        export AWS_DEFAULT_PROFILE=$( _list_profiles |  sed -n 1p ) 
 
     fi
     _source_org_access
