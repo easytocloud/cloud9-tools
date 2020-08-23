@@ -1,0 +1,25 @@
+#! /usr/bin/env bash
+
+# return credentials in required format
+# see: https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sourcing-external.html
+#
+
+source ~/.aws/c9tools/bin/_functions
+
+function credsout()
+{
+cat <<EOT
+{
+  "Version": 1,
+  "AccessKeyId": "$AK",
+  "SecretAccessKey": "$SK",
+  "SessionToken": "$TOK"
+}  
+EOT
+}
+
+awsenv $1
+awsprofile $2
+read AK SK TOK <<< $(aws sts assume-role --role-arn $3 --role-session-name aap --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' --output text)
+credsout
+
