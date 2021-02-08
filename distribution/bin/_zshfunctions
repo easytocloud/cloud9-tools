@@ -1,0 +1,639 @@
+#! /usr/bin/env bash
+
+# --- Vars section ---
+
+# Generic settings
+
+LOGDATEFORMAT='+%Y/%m/%d-%H:%M'
+_debug=${_debug:-false}
+
+export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+
+# --- Only code below this marker ---
+
+_roleindex=1
+
+# --- setawsvars
+#
+#     [Interactively] set AccessKey, SecretKey and SessionToken
+#
+#      
+#
+setawsvars()
+{
+    if [ $? != 0 ]
+    then
+        return 1
+    fi
+    
+    if [ $# = 0 ]
+    then
+	    echo -n "please enter AK: " && read AWS_ACCESS_KEY_ID
+	    echo -n "please enter SK: " && read AWS_SECRET_ACCESS_KEY
+    else
+	    AWS_ACCESS_KEY_ID=${1}
+        AWS_SECRET_ACCESS_KEY=${2}
+    fi
+
+    # Make sure to make _ID empty when length is 0
+
+    ! test -n "${AWS_ACCESS_KEY_ID}" && unset AWS_ACCESS_KEY_ID && export AWS_ACCESS_KEY_ID
+
+    case ${AWS_ACCESS_KEY_ID} in
+    AK*)    AWS_SESSION_TOKEN=""
+            ;;
+    A*)      if [ $# -lt 3 ]
+            then
+                echo -n "please enter Session Token: " && read AWS_SESSION_TOKEN
+            else
+                AWS_SESSION_TOKEN=${3}
+            fi
+            ;;
+    esac
+}
+
+# --- pushrole
+#
+#       push current role 
+#           assume role passed in $1
+#           optional $2 is used as external-id
+#
+pushrole()
+{
+    export _wishrole=${1}
+    export _external=""
+    
+    [[  -z "${2}" ]] || _external="--external-id ${2}"
+    
+    debug "pushrole: about to assume ${_wishrole} ${_external}"
+    
+    O_AKID[${_roleindex}]=${AWS_ACCESS_KEY_ID}
+      O_SK[${_roleindex}]=${AWS_SECRET_ACCESS_KEY}
+     O_TOK[${_roleindex}]=${AWS_SESSION_TOKEN}
+    let _roleindex+=1
+    
+    setawsvars $( aws sts assume-role --role-arn $_wishrole ${_external} --role-session pushed_role \
+        --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' --output text 2>/dev/null )
+       
+    if [ $? != 0 ]
+    then
+        error "assume-role failed, popping previous role"
+        poprole
+        return 1
+    else
+        debug "pushed"
+    fi
+    return 0
+}
+
+# --- poprole
+#
+#       pop previously pushed role
+#       *return* (not exit) when stack is empty
+#
+poprole()
+{
+    let _roleindex-=1
+    
+    if (( _roleindex<1 )) 
+    then
+        error "Stack empty"
+        _roleindex=1
+        return
+    fi
+    
+    setawsvars "${O_AKID[${_roleindex}]}" "${O_SK[${_roleindex}]}" "${O_TOK[${_roleindex}]}"
+  
+    debug "poprole: popped, remaining $_roleindex on stack"
+}
+
+_CMDoutstart()
+{
+    if [ "${_cmdout}" = 'JSON' ]
+    then
+        echo '{'
+        echo '  "Results": ['
+    fi
+}
+
+_CMDoutacctheader()
+{
+    account=${1}
+    if [ "${_cmdout}" = 'JSON' ]
+    then
+        echo '    {'
+        echo '      "AccountId": "'${account}'",'
+        echo '      "AccountName": "'$(ac2name $account)'",'
+        echo -n '      "AccountResult": '
+    else
+        echo "# account ${account} | $(ac2name ${account}) "
+    fi
+}
+
+_CMDoutacct()
+{
+    if [ "${_cmdout}" = 'JSON' ]
+    then
+        eval ${@} | sed -e '2,$s/^/    /' -e '$s/^/  /'
+    else 
+        eval ${@}
+    fi
+}
+
+_CMDoutacctfooter()
+{
+    if [ "${_cmdout}" = 'JSON' ]
+    then
+        echo -n "    }"
+    fi
+}
+_CMDoutacctnext()
+{
+ if [ "${_cmdout}" = 'JSON' ]
+    then
+        echo  ","
+    fi   
+}
+
+_CMDoutend()
+{
+    if [ "${_cmdout}" = 'JSON' ]
+    then
+        echo ''
+        echo '  ]'
+        echo '}'
+    fi
+}
+
+# --- CMDforaccountlist
+#
+# execute ${CMD} in each of the accounts in parameter list assuming ${ORG_ACCOUNT_ACCESS_ROLE}
+
+_CMDforaccountlist()
+{
+    local _first=true
+
+    _CMDoutstart
+    for account in $(echo ${*})
+    do
+        if [ "${_first}" = true ]
+        then    
+            _first=false
+        else    
+            _CMDoutacctnext
+        fi
+
+        _CMDoutacctheader ${account}
+
+        if  [[ "${account}" = "${ORG_MASTER_ACCOUNT}" ]]||pushrole arn:aws:iam::${account}:role/${ORG_ACCOUNT_ACCESS_ROLE} 
+        then
+            _CMDoutacct ${CMD}
+            [[ "${account}" = "${ORG_MASTER_ACCOUNT}" ]]||poprole
+        else
+            _CMDoutacct echo '\"no access to role ${ORG_ACCOUNT_ACCESS_ROLE}\"'
+        fi
+
+        _CMDoutacctfooter
+    done
+
+    _CMDoutend
+}
+
+_source_org_access()
+{
+    # source ENV specific org_access or generic if not available
+    if test -z ${AWS_DEFAULT_ENV}
+    then
+        _OAF=${C9TOOLSROOT}/etc/org_access
+    else
+        _OAF=${C9TOOLSROOT}/etc/org_access.${AWS_DEFAULT_ENV}
+    fi
+    if test -f ${_OAF}
+    then
+        source ${_OAF}
+    else
+        error "Environment not setup - run ${C9TOOLSROOT}/bin/c9toolssetup for current environment"
+    fi
+}
+# --- fororganization
+#
+#       execute the command given as argument in all accounts of the organization
+#       this function should run in MASTER account and assumes OrgAccAccRole in member accounts
+#
+fororganization()
+{
+    _source_org_access
+
+    if [[ $(aws sts get-caller-identity --query Account --output text) != ${ORG_MASTER_ACCOUNT} ]]
+    then
+        error "fororganization runs only in Master account ${ORG_MASTER_ACCOUNT}" 
+        return 1
+    fi
+
+    _allaccounts=$(_my_list_accounts --query 'Accounts[].Id' --output text )
+    
+    export CMD=${@}
+    
+    _CMDforaccountlist ${_allaccounts}
+    
+}
+
+ac2ou()
+{
+    aws organizations describe-organizational-unit --organizational-unit-id $( \
+        aws organizations list-parents --child-id ${1} --query 'Parents[].Id' --output text ) \
+    --query OrganizationalUnit.Name --output text 
+}
+
+_findOUidr()
+{
+    local OU=${1}
+    local SPath=${2}
+    
+    for _ou in $( aws organizations list-children --parent-id ${3} --child-type ORGANIZATIONAL_UNIT --query 'Children[].Id' --output text )
+    do 
+        _ouName=$( aws organizations describe-organizational-unit --organizational-unit-id ${_ou} --query OrganizationalUnit.Name --output text )
+        echo ">> $SPath -- $_ouName -- ${OU}" >&2
+        if [ ${OU} = ${_ouName} ]
+        then
+            echo ${_ou}
+        else
+            _findOUidr ${OU} ${SPath}${_ouName}/ ${_ou}
+        fi
+    done
+    
+}
+
+_ou2ouId()
+{
+    OU=${1}
+
+    _rootID=$(aws organizations list-roots --query 'Roots[].Id' --output text)
+
+    _findOUidr ${OU} / ${_rootID}
+
+}
+
+ou2acs()
+{
+    aws organizations list-accounts-for-parent --parent-id $(_ou2ouId ${1}) --query 'Accounts[].Id' --output text
+}
+
+forou()
+{
+    OU=${1}
+    shift
+
+    export CMD=${@}
+
+    _source_org_access
+
+    [[ $(aws sts get-caller-identity --query Account --output text) = ${ORG_MASTER_ACCOUNT} ]] || \
+        die "fororganization runs only in Master account ${ORG_MASTER_ACCOUNT}"
+    
+    _allaccounts=$( ou2acs ${OU} )
+
+    _CMDforaccountlist ${_allaccounts}
+
+}
+
+_list_profiles()
+{
+    test -f ${AWS_CONFIG_FILE:-~/.aws/config} && grep -h '\[profile .*\]' ${AWS_CONFIG_FILE:-~/.aws/config} |  sed 's/profile //' | tr -d '[]'
+}
+
+forprofiles()
+{
+    local AWS_DEFAULT_PROFILE
+
+    for AWS_DEFAULT_PROFILE in $(_list_profiles)
+    do
+        _act=$(aws sts get-caller-identity --query Account --output text )
+        _me=$(aws sts get-caller-identity --query Arn --output text | cut -f6 -d: )
+        echo "# ${AWS_DEFAULT_PROFILE} | ${_act} | ${_me} | "
+        eval ${@}
+    done
+}
+
+# --- _pre_list_accounts
+#
+#       before calling aws list-accounts assume LIST_ACCOUNTS_ROLE in ORG_MASTER_ACCOUNT when necessary
+#
+_pre_my_list_accounts()
+{
+    need_push=true
+    
+    [[ $(aws sts get-caller-identity --query "Account" --output text) = "${ORG_MASTER_ACCOUNT}" ]] && need_push=false
+    
+    ${need_push} && pushrole arn:aws:iam::${ORG_MASTER_ACCOUNT}:role/${LIST_ACCOUNTS_ROLE} ${LIST_ACCOUNTS_EXTERNAL_ID}
+}
+
+# --- _post_list_accounts
+#
+#       pop role when pushed in pre_list_accounts
+#
+_post_my_list_accounts()
+{
+    ${need_push} && poprole
+}
+
+# --- _my_list_accounts
+#
+#       uses _pre and _post functions to assume a role in the Master Account
+#       so that aws organization list-accounts can be executed
+#       all parameters passed to this function will be passed to aws organization list-accounts
+#
+_my_list_accounts()
+{
+    _pre_my_list_accounts
+    aws organizations list-accounts $@
+    _post_my_list_accounts
+}
+
+# --- ac2name
+#
+#       translate 12-digit account-id to AWS account name
+#
+ac2name()
+{
+    _my_list_accounts --query 'Accounts[?Id==`"'${1}'"`].Name' --output text
+}
+
+# --- name2ac
+#
+#       translate AWS account name to 12 digit account identifier
+#
+name2ac()
+{   
+    _my_list_accounts --query 'Accounts[?Name==`"'${1}'"`].Id' --output text   
+}
+
+# --- get_accountlist
+#
+#      create a comma-separated list of all accounts
+#      optional parameter is comma-separated list of fields
+#      defaults: to Name,Id
+#
+get_accountlist()
+{
+    FIELDS=${1:-"Name,Id"}
+     
+    _my_list_accounts --query 'Accounts[].['${FIELDS}']' --output text | tr '\t' ','
+    
+}
+
+awsenv()
+{
+    if ! test -h ~/.aws/credentials || ! test -h ~/.aws/config
+    then
+	error "your credentials- or config- file is not a symbolic link"
+    else
+	if [ $# -ne 1 ] 
+	then
+	    if test -t 0
+	    then
+		max=$( ls ~/.aws/docker-cli | wc -l | tr -d ' ' )
+		ls ~/.aws/docker-cli | awk '{ print NR, $0 }' | column 
+		echo -n "Enter environment number [1-${max}]> "; read n
+		if test -n "$n" -a "$n" -gt 0 -a "$n" -le $max 2>/dev/null
+		then
+		    export AWS_DEFAULT_ENV=$( ls ~/.aws/docker-cli | sed -n ${n}p )
+		else
+		    error "Value out of range, environment remains $AWS_DEFAULT_ENV"
+		fi
+	    else
+		error "Usage: $0 [environment]  -- without parameter interactive mode reads from tty"
+	    return 1
+	    fi
+	else
+	    AWS_DEFAULT_ENV=${1}
+	fi
+
+
+	if [ "${AWS_DEFAULT_ENV}" = "default" ]
+	then
+	    unset AWS_CONFIG_FILE AWS_SHARED_CREDENTIALS_FILE AWS_DEFAULT_ENV
+	    # export AWS_DEFAULT_PROFILE=default
+	    export AWS_DEFAULT_PROFILE=$( _list_profiles |  sed -n 1p )
+	else
+	    pushd ~/.aws 2>/dev/null 1>&2
+            rm config credentials
+            ln -s docker-cli/${AWS_DEFAULT_ENV}/config ~/.aws/config
+            ln -s docker-cli/${AWS_DEFAULT_ENV}/credentials ~/.aws/credentials
+	    export AWS_DEFAULT_PROFILE=$( _list_profiles |  sed -n 1p ) 
+            popd 2>/dev/null 1>&2
+	fi
+	_source_org_access
+    fi
+}
+
+awsprofile() 
+{
+  if [ $# -ne 1 ]
+  then # interactive
+    if test -t 0
+    then
+      local max=$(_list_profiles | wc -l | tr -d ' ')
+
+      _list_profiles | awk '{ print NR, $0 }' | column 
+
+      echo -n "Enter profile number [1-${max}]> "; read n
+      if test -n "$n" -a "$n" -gt 0 -a "$n" -le $max 2>/dev/null
+      then
+        export AWS_DEFAULT_PROFILE=$( _list_profiles |  sed -n ${n}p )
+      else
+        error "Value out of range, profile remains $AWS_DEFAULT_PROFILE"
+      fi
+    else
+      error "Usage: $0 [profile]  -- without parameter interactive mode reads from tty"
+      return 1
+    fi
+  else # process arg
+    if grep -q "^\[profile $1\]" ${AWS_CONFIG_FILE:-~/.aws/config} 2> /dev/null
+    then
+      export AWS_DEFAULT_PROFILE=$1
+    else
+      error "[$1]: No such profile."
+      return 2
+    fi
+  fi  
+}
+
+_find_mfa_arn()
+{
+    cat ${AWS_SHARED_CREDENTIALS_FILE} | sed -n "/^\[${1}\]/,/^\[/p" | grep mfa_serial | cut -f2 -d = | tr -d ' '
+}
+
+awsmfa () 
+{
+    local AWS_USER_PROFILE=${AWS_DEFAULT_PROFILE}
+    local AWS_MFA_PROFILE=${AWS_DEFAULT_PROFILE}.mfa
+    local ARN_OF_MFA=$(_find_mfa_arn ${AWS_MFA_PROFILE})
+
+    if test -z ${ARN_OF_MFA}
+    then
+        error "No MFA profile for ${AWS_USER_PROFILE} in ${AWS_SHARED_CREDENTIALS_FILE}"
+        return 1
+    fi
+
+    if [ $# -ne 1 ]
+    then
+        if test -t 
+        then
+            echo -n "Enter MFA Token value: " && read mfa
+        else
+            error "Usage: $0 token_value"
+            return 1
+        fi
+    fi
+
+    
+    local MFA_VALUE=${1:-$mfa}
+
+    local DURATION=3600
+
+    echo == $ARN_OF_MFA -- $MFA_VALUE
+
+    read _AWS_ACCESS_KEY_ID _AWS_SECRET_ACCESS_KEY _AWS_SESSION_TOKEN <<< $( \
+    aws --profile ${AWS_USER_PROFILE} sts get-session-token \
+        --duration $DURATION  \
+        --serial-number $ARN_OF_MFA \
+        --token-code $MFA_VALUE \
+        --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
+        --output text  )
+
+    if [ -z "${_AWS_ACCESS_KEY_ID}" ]
+    then
+        return
+    fi
+
+    aws --profile ${AWS_MFA_PROFILE} configure set aws_access_key_id "${_AWS_ACCESS_KEY_ID}" 
+    aws --profile ${AWS_MFA_PROFILE} configure set aws_secret_access_key "${_AWS_SECRET_ACCESS_KEY}" 
+    aws --profile ${AWS_MFA_PROFILE} configure set aws_session_token "${_AWS_SESSION_TOKEN}"
+
+    AWS_DEFAULT_PROFILE=${AWS_MFA_PROFILE}    
+}
+
+c9toolsinit()
+{
+
+    # PS1='\h:\W \u[${AWS_DEFAULT_PROFILE}%${AWS_DEFAULT_ENV}]$ '
+
+    # enable command completion
+
+    #complete -C `which aws_completer` aws
+    #which eb_completion.bash > /dev/null && . eb_completion.bash
+
+    if test -f ~/.awsdefaultenv
+    then
+        awsenv $(cat ~/.awsdefaultenv)
+    else
+        log "No ~/.awsdefaultenv -- using ~/.aws/[config | credentials]"
+        awsenv default
+    fi
+
+    if test -f ~/.awsdefaultprofile
+    then
+        awsprofile $(cat ~/.awsdefaultprofile)
+    else
+        echo "No .awsdefaultprofile -- using default" >&2
+        awsprofile default
+    fi
+    
+     
+}
+
+# --- whoiam
+#
+#       what (IAM) user i am 
+#
+
+whoiam()
+{
+    aws sts get-caller-identity $@
+}
+
+# --- whoarewe
+#
+#       show all accouns in our organization
+# 
+
+whoarewe()
+{
+    aws organizations list-accounts --query 'Accounts[].[Id,Email]' --output text
+}
+
+# --- filterin
+#
+#       show only 'words' that occur in both 'lists'
+#
+
+filterin()
+{
+    LIST="${1}"
+    PATT="${2}"
+    
+    for item in ${LIST}
+    do
+        echo "${PATT}" | grep -q "${item}" && echo "${item}"
+    done
+}
+
+# === some generic functions
+
+# --- myfunctions
+#
+#       show functions defined in self
+#
+myfunctions()
+{
+    grep '.*()$' ${C9TOOLSROOT}/bin/_functions | tr -d '()'
+}
+
+# --- manfunction
+#
+#       display the 'documentation' header for the function defined in self
+#       documentation starts with '# --- ' pattern
+#       and ends at first non-comment line
+manfunction()
+{
+    sed -n -e "/^# --- $1/,/^[^#]/p" ${C9TOOLSROOT}/bin/_functions | tr -d '#' 
+}
+
+# --- log
+#
+#       write timestemped log message with parameter(s)
+#
+log()
+{
+    echo "$(date ${LOGDATEFORMAT}) - $@"
+}
+# --- debug
+#
+#       conditionally write timestemped log message with parameter(s)
+#       only when _debug is set to true
+#
+debug()
+{
+    ${_debug} && log "$@"
+}
+# --- error
+#
+#       log messge to standard error
+#
+error()
+{
+    log "$@" >&2
+}
+# --- die
+#
+#       exit script after loggin error message in parameter(s)
+#
+die()
+{
+    error "$@"
+    exit 1
+}
+
+# make functions available in scripts and other sub-shells
+
