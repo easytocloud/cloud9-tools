@@ -1,3 +1,10 @@
+# REORGANIZED
+
+This repo is taken apart and put in pieces.
+Pieces will be published when ready, to start with aws-profile-organizer
+
+Stay tuned for more ...
+
 # cloud9-tools
 Some handy tools for use in your AWS cloud9 linux hosted desktop
 
